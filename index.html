@@ -68,12 +68,36 @@ tr:last-child td{border-bottom:none;}
 </head>
 <body>
 
+<!-- AUTH SCREEN -->
+<div id="auth-screen" style="display:none;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:#f5f5f0;">
+  <div style="width:100%;max-width:360px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="font-size:40px;margin-bottom:8px;">💰</div>
+      <h1 style="font-size:24px;font-weight:700;">Budget Tracker</h1>
+      <p style="color:var(--muted);font-size:14px;margin-top:4px;">Your personal finance tracker</p>
+    </div>
+    <div style="background:#fff;border-radius:16px;border:1px solid var(--border);padding:24px;">
+      <div class="seg" id="auth-seg">
+        <button id="seg-in" class="on" onclick="setAuthMode('login')">Sign In</button>
+        <button id="seg-up" onclick="setAuthMode('signup')">Sign Up</button>
+      </div>
+      <div class="fg"><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email"/></div>
+      <div class="fg"><label>Password</label><input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password"/></div>
+      <div id="auth-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;color:#A32D2D;margin-bottom:12px;"></div>
+      <button class="btn" id="auth-btn" onclick="handleAuth()">Sign In</button>
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:14px;">Your data is private and encrypted.<br>Only you can access it.</p>
+    </div>
+  </div>
+</div>
+
 <div id="sync-bar">Syncing…</div>
 
+<div id="app-shell">
 <div class="mbar">
   <button onclick="changeMonth(-1)">‹</button>
   <span id="mlbl"></span>
   <button onclick="changeMonth(1)">›</button>
+  <button onclick="signOut()" style="background:transparent;border:none;font-size:12px;color:var(--muted);padding:0 4px;">Sign out</button>
 </div>
 
 <!-- ADD -->
@@ -225,6 +249,7 @@ tr:last-child td{border-bottom:none;}
   <div class="card" id="sum-table"></div>
   <div class="card" id="sum-assets" style="margin-top:12px;margin-bottom:14px;"></div>
 </div>
+</div><!-- end app-shell -->
 
 <nav id="nav">
   <button class="nb active" id="nav-add" onclick="go('add')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Add</button>
@@ -243,13 +268,17 @@ tr:last-child td{border-bottom:none;}
 const SB_URL = 'https://jqivqfhhzwiuysdbtsqv.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxaXZxZmhoendpdXlzZGJ0c3F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDkxNjIsImV4cCI6MjA5MTY4NTE2Mn0.Tcq_z8IwMFf-TsYFpdpLXfuq-Lt-V-7gLddfHrgWb2Q';
 
-const sbHeaders = {
-  'Content-Type': 'application/json',
-  'apikey': SB_KEY,
-  'Authorization': 'Bearer ' + SB_KEY
-};
-
+let authToken = null;
+let currentUser = null;
 let saveTimer = null;
+
+function sbHeaders(token) {
+  return {
+    'Content-Type': 'application/json',
+    'apikey': SB_KEY,
+    'Authorization': 'Bearer ' + (token || SB_KEY)
+  };
+}
 
 function showSync(state, msg) {
   const bar = document.getElementById('sync-bar');
@@ -258,34 +287,73 @@ function showSync(state, msg) {
   if (state === 'saved') setTimeout(() => bar.className = '', 2000);
 }
 
+// ── Auth ─────────────────────────────────────────────────
+async function signUp(email, password) {
+  const r = await fetch(`${SB_URL}/auth/v1/signup`, {
+    method: 'POST',
+    headers: sbHeaders(),
+    body: JSON.stringify({ email, password })
+  });
+  return r.json();
+}
+
+async function signIn(email, password) {
+  const r = await fetch(`${SB_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: sbHeaders(),
+    body: JSON.stringify({ email, password })
+  });
+  return r.json();
+}
+
+async function signOut() {
+  await fetch(`${SB_URL}/auth/v1/logout`, {
+    method: 'POST', headers: sbHeaders(authToken)
+  });
+  authToken = null; currentUser = null;
+  localStorage.removeItem('sb_token');
+  localStorage.removeItem('sb_user');
+  showAuthScreen();
+}
+
+async function refreshSession(refreshToken) {
+  const r = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: sbHeaders(),
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+  return r.json();
+}
+
+// ── Data ─────────────────────────────────────────────────
 async function sbGet(key) {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/budget_data?key=eq.${key}&select=value`, { headers: sbHeaders });
+    const r = await fetch(`${SB_URL}/rest/v1/budget_data?key=eq.${key}&select=value`, {
+      headers: sbHeaders(authToken)
+    });
     const data = await r.json();
     return data.length ? data[0].value : null;
   } catch { return null; }
 }
 
 async function sbSet(key, value) {
-  try {
-    await fetch(`${SB_URL}/rest/v1/budget_data`, {
-      method: 'POST',
-      headers: { ...sbHeaders, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
-    });
-  } catch(e) { throw e; }
+  await fetch(`${SB_URL}/rest/v1/budget_data`, {
+    method: 'POST',
+    headers: { ...sbHeaders(authToken), 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify({ key, value, user_id: currentUser.id, updated_at: new Date().toISOString() })
+  });
 }
 
 async function loadAll() {
   showSync('loading', '⏳ Loading your data…');
   const keys = ['expenses','proj','inc','assets','installments','fixed'];
   const results = await Promise.all(keys.map(k => sbGet(k)));
-  allExp        = results[0] || {};
-  allProj       = results[1] || {};
-  allInc        = results[2] || {};
-  assets        = results[3] || [];
-  installments  = results[4] || [];
-  fixedExp      = results[5] || [];
+  allExp       = results[0] || {};
+  allProj      = results[1] || {};
+  allInc       = results[2] || {};
+  assets       = results[3] || [];
+  installments = results[4] || [];
+  fixedExp     = results[5] || [];
   showSync('saved', '✓ Data loaded');
 }
 
@@ -837,14 +905,88 @@ function renderSummary(){
   document.getElementById('sum-assets').innerHTML=ah;
 }
 
-// ── Init ─────────────────────────────────────────────────
-async function init() {
+// ── Auth UI ──────────────────────────────────────────────
+let authMode = 'login';
+
+function setAuthMode(mode) {
+  authMode = mode;
+  document.getElementById('seg-in').classList.toggle('on', mode==='login');
+  document.getElementById('seg-up').classList.toggle('on', mode==='signup');
+  document.getElementById('auth-btn').textContent = mode==='login' ? 'Sign In' : 'Create Account';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg; el.style.display = '';
+}
+
+async function handleAuth() {
+  const email    = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if (!email || !password) { showAuthError('Please enter your email and password.'); return; }
+  const btn = document.getElementById('auth-btn');
+  btn.textContent = '…'; btn.disabled = true;
+  try {
+    const data = authMode==='login' ? await signIn(email, password) : await signUp(email, password);
+    if (data.error || data.msg) {
+      showAuthError(data.error_description || data.msg || 'Something went wrong.');
+      btn.textContent = authMode==='login'?'Sign In':'Create Account'; btn.disabled=false; return;
+    }
+    authToken   = data.access_token;
+    currentUser = data.user;
+    // Persist session
+    localStorage.setItem('sb_token',   JSON.stringify({ access: data.access_token, refresh: data.refresh_token }));
+    localStorage.setItem('sb_user',    JSON.stringify(data.user));
+    await startApp();
+  } catch(e) {
+    showAuthError('Connection error — check your internet.'); btn.textContent=authMode==='login'?'Sign In':'Create Account'; btn.disabled=false;
+  }
+}
+
+function showAuthScreen() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app-shell').style.display   = 'none';
+  document.getElementById('nav').style.display         = 'none';
+  document.getElementById('sync-bar').className        = '';
+}
+
+async function startApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display   = '';
+  document.getElementById('nav').style.display         = 'flex';
   await loadAll();
   syncSubs('e-cat','e-sub');
   syncSubs('f-cat','f-sub');
   populateAccounts();
   updMonthLabel();
   go('add');
+}
+
+// ── Init ─────────────────────────────────────────────────
+async function init() {
+  // Hide app until auth confirmed
+  document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('nav').style.display       = 'none';
+
+  // Try to restore session from localStorage
+  try {
+    const stored = JSON.parse(localStorage.getItem('sb_token'));
+    const user   = JSON.parse(localStorage.getItem('sb_user'));
+    if (stored && user) {
+      // Try to refresh the session
+      const data = await refreshSession(stored.refresh);
+      if (data.access_token) {
+        authToken   = data.access_token;
+        currentUser = data.user || user;
+        localStorage.setItem('sb_token', JSON.stringify({ access: data.access_token, refresh: data.refresh_token }));
+        localStorage.setItem('sb_user',  JSON.stringify(currentUser));
+        await startApp(); return;
+      }
+    }
+  } catch {}
+
+  showAuthScreen();
 }
 init();
 </script>
