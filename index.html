@@ -561,8 +561,8 @@ function setFilter(c){filterCat=c;renderExpenses();}
 function renderBudget(){
   const proj=getProj(),inc=getInc(),act=computeActuals(allForMonth()),k=mk();
   const carryOver=allProj[k]?._carryOver||0;
-  const totalInc=totIncP(),totalProj=totExpP(),remaining=totalInc-totalProj;
-  const usedPct=Math.min(100,Math.round((totalProj)/(totalInc||1)*100));
+  const totalInc=totIncP(),totalProj=totExpP(),remaining=totalInc-totalProj-carryOver;
+  const usedPct=Math.min(100,Math.round((totalProj+carryOver)/(totalInc||1)*100));
   const barColor=remaining<0?'var(--red)':remaining<totalInc*0.1?'#BA7517':'var(--green)';
   document.getElementById('budget-summary-bar').innerHTML=`
     <div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 16px;">
@@ -570,7 +570,7 @@ function renderBudget(){
         <div><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;">Remaining to budget</div>
           <div style="font-size:26px;font-weight:700;color:${barColor};">${fmt(remaining)}</div></div>
         <div style="text-align:right;"><div style="font-size:11px;color:var(--muted);margin-bottom:2px;">of ${fmt(totalInc)} income</div>
-          <div style="font-size:13px;font-weight:700;">${fmt(totalProj)} projected</div></div>
+          <div style="font-size:13px;font-weight:700;">${fmt(totalProj+carryOver)} projected</div></div>
       </div>
       <div style="background:#f0f0ec;border-radius:6px;height:8px;overflow:hidden;">
         <div style="height:100%;width:${usedPct}%;background:${barColor};border-radius:6px;transition:width .4s;"></div></div>
@@ -580,7 +580,7 @@ function renderBudget(){
       </div>
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <div><div style="font-size:13px;font-weight:700;">Carry-over from last month</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Added to Savings → Balance Transfer</div></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Reduces your available budget for this month</div></div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <span style="font-size:13px;font-weight:700;color:${carryOver>0?'var(--red)':'var(--muted)'};">${fmt(carryOver)}</span>
           <button onclick="editCarryOver(${carryOver})" style="padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:#f8f8f4;font-size:12px;font-weight:600;">Edit</button>
@@ -621,9 +621,8 @@ function editCarryOver(cur){
   const num=Math.abs(parseFloat(v)||0),k=mk();
   if(!allProj[k])allProj[k]=JSON.parse(JSON.stringify(DEF_PROJ));
   allProj[k]._carryOver=num;
-  if(!allExp[k])allExp[k]=[];
-  allExp[k]=allExp[k].filter(e=>!e._isCarryOver);
-  if(num>0)allExp[k].push({id:Date.now(),name:'Carry-over from last month',category:'SAVINGS',subcategory:'Balance Transfer',date:'01',amount:num,_isCarryOver:true});
+  // Remove any previously auto-added carry-over expense — carry-over only lives in the budget row, not as a real expense
+  if(allExp[k])allExp[k]=allExp[k].filter(e=>!e._isCarryOver);
   scheduleSave();renderBudget();
   if(curTab==='expenses')renderExpenses();
 }
