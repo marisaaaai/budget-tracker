@@ -468,7 +468,7 @@ const SEC_COLORS = {daily:"#1D9E75",goingout:"#D4537E",transport:"#73726c",healt
 const SECS = Object.keys(SEC_ROWS);
 const DEF_PROJ = {
   income:{salary:15000,interest:0,dividends:0,refunds:0,business:0,pension:0,other_inc:0},
-  daily:{takeout:300,yo:0,subs:411.81,phone:140,insurance:135,parking:250,other:100},
+  daily:{takeout:300,yo:1000,subs:411.81,phone:140,insurance:135,parking:250,other:100},
   goingout:{drinks:1000,dates:0},
   transport:{car:2169.03,carwash:0},
   health:{gym:599,therapy:390,hlth:0,medicine:0},
@@ -666,7 +666,7 @@ function renderBudget() {
   // ── Summary bar ──────────────────────────────────────
   const totalInc  = totIncP();
   const totalProj = totExpP();
-  const remaining = totalInc - totalProj - carryOver;
+  const remaining = totalInc - totalProj;
   const usedPct   = Math.min(100, Math.round((totalProj + carryOver) / (totalInc || 1) * 100));
   const barColor  = remaining < 0 ? 'var(--red)' : remaining < totalInc * 0.1 ? '#BA7517' : 'var(--green)';
 
